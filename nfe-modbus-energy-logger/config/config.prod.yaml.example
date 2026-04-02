@@ -1,0 +1,60 @@
+port: /dev/ttyUSB0
+
+modbus:
+  backend: pymodbus     #mbpoll   #pymodbus  # More reliable for production
+
+# Addressing scheme:
+# - Single-phase meters: 10-99 (room for 90 meters)
+# - Three-phase meters: 100+ (high addresses to avoid conflicts)
+
+meters:
+  - id: 100
+    name: "main_three_phase"
+    type: "3phase"
+    enabled: true
+
+  - id: 10
+    name: "first_single_phase_NP"
+    type: "1phase"
+    enabled: false
+
+  # Future single-phase meters
+  - id: 11
+    name: "single_phase_2"
+    type: "1phase"
+    enabled: false
+
+  - id: 12
+    name: "single_phase_3"
+    type: "1phase"
+    enabled: false
+
+# Separate polling and logging intervals
+poll_interval: 10       # Poll every 10 seconds (accurate energy calc)
+log_interval: 900       # Log every 15 minutes
+
+# Logging configuration
+logging:
+  base_dir: data
+  state_dir: data/state
+  log_calculated_energy: true  # Log E_L1_cal, E_L2_cal, E_L3_cal for 3-phase meters (set to false to leave blank)
+
+  # Log rotation settings
+  rotation:
+    max_rows: 50000     # ~17 months at 15-min intervals
+    compress_old: true  # Gzip old files to save space
+
+# Backup configuration
+backup:
+  enabled: true  # Set to false to disable automated backups
+  schedule:
+    frequency_hours: 6  # Run backup every 6 hours
+
+  # Backup providers (can enable multiple simultaneously)
+  providers:
+    - name: "nextcloud"
+      type: "nextcloud"
+      enabled: true
+      config:
+        rclone_remote: "nextcloud"  # Name of rclone remote (configured via 'rclone config')
+        remote_path: "/meter_backups"  # Path on Nextcloud server

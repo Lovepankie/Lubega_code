@@ -1,0 +1,16 @@
+[Unit]
+Description=NFE Meter Data Backup Service
+After=meter.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=nfetestpi2
+WorkingDirectory=/home/nfetestpi2/nfe-modbus-energy-logger-prod
+ExecStart=/usr/bin/python3 -m src.backup.main config/config.prod.yaml
+StandardOutput=journal
+StandardError=journal
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+data/*.csv
+data/*.json
+*.pdf
+
+# Environment-specific config files (each Pi has its own)
+config/config.prod.yaml
+config/config.dev.yaml

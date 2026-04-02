@@ -1,0 +1,23 @@
+# TEMPLATE FILE - Do not install directly!
+# The deploy.sh script automatically replaces 'nfetestpi2' with your actual username
+# and '/home/nfetestpi2' with your actual home directory during installation.
+
+[Unit]
+Description=NFE Modbus Energy Logger
+After=network.target
+
+[Service]
+Type=simple
+User=nfetestpi2
+WorkingDirectory=/home/nfetestpi2/nfe-modbus-energy-logger-prod
+ExecStart=/usr/bin/python3 -m src.main config/config.prod.yaml
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

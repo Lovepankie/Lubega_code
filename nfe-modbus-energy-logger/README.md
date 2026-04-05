@@ -303,7 +303,74 @@ For issues or questions:
 2. Review logs: `sudo journalctl -u meter.service -f`
 3. Contact: [Your contact info]
 
+## Electricity Theft Detection (ML Pipeline)
+
+This project now includes a full ML-based electricity theft detection pipeline
+built on top of the energy logger. See [CHANGELOG.md](CHANGELOG.md) for details.
+
+### Theft Scenarios Covered
+
+| Label | Scenario | Description |
+|-------|----------|-------------|
+| 0 | `normal` | No bypass — legitimate consumption |
+| 1 | `bypass_red` | Phase A (L1) current transformer bypassed |
+| 1 | `bypass_yellow` | Phase B (L2) CT bypassed |
+| 1 | `bypass_blue` | Phase C (L3) CT bypassed |
+| 1 | `bypass_red_yellow` | Phases A + B bypassed |
+| 1 | `bypass_red_blue` | Phases A + C bypassed |
+| 1 | `bypass_blue_yellow` | Phases B + C bypassed |
+| 1 | `bypass_all` | All three phases bypassed |
+
+### Data Collection Scripts
+
+```bash
+# Collect labelled data (e.g. 24-hour normal baseline)
+python3 scripts/collect_data.py --label normal --duration 86400
+
+# Collect a bypass scenario (45 minutes)
+python3 scripts/collect_data.py --label bypass_red --duration 2700
+
+# Test Modbus connectivity
+python3 scripts/modbus_test.py
+
+# Generate PDF analysis report from collected data
+python3 scripts/generate_report.py
+```
+
+### Output CSV Format
+
+```
+timestamp,scenario,label,V_L1,V_L2,V_L3,I_L1,I_L2,I_L3,
+P_total,P_L1,P_L2,P_L3,PF_total,frequency,energy_total
+```
+
+### Auto-Start on Boot (Power-Cut Resilient)
+
+The data collection service is managed by systemd and configured to survive
+power cuts:
+
+```bash
+# Check service status
+sudo systemctl status normal-collection.service
+
+# View live logs
+tail -f ~/iot_meter/logs/normal_collection.log
+```
+
+The service uses `Restart=always` + `StartLimitIntervalSec=0` so it will
+restart after any exit — including abrupt power loss and reboot.
+
+### ML Models (Planned)
+
+- **Isolation Forest** — unsupervised anomaly detection on normal baseline
+- **One-Class SVM** — boundary learning on normal feature space
+- **LSTM Autoencoder** — sequence-based reconstruction error detection
+- **Voting Ensemble** — majority vote across all three models (`detect.py`)
+- **Flask Dashboard** — live readings and theft alerts
+
 ## Version History
 
+- **v3.0.0** (2026-04-05): Theft detection ML pipeline, labelled data
+  collection, systemd auto-start service, PDF report generator
 - **v2.0.0** (2026-03-19): Multi-meter support, 15-minute aggregation, log rotation
 - **v1.0.0** (Initial): Single meter continuous logging

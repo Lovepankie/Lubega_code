@@ -32,7 +32,7 @@ from src.modbus_factory import get_client
 from src.meter_reader import ThreePhaseMeterReader
 
 CONFIG_PATH     = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.prod.yaml')
-SLAVE_ID        = 100
+SLAVE_ID        = 1     # DTSU666 factory default slave ID
 SAMPLE_INTERVAL = 5   # seconds
 
 # Numeric label: normal=0, any bypass=1

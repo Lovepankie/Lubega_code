@@ -8,7 +8,7 @@ class ModbusClient:
             baudrate=9600,
             bytesize=8,
             parity="N",
-            stopbits=2,
+            stopbits=1,
             timeout=1
         )
         self.client.connect()

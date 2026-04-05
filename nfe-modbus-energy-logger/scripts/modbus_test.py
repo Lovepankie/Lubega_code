@@ -16,7 +16,7 @@ from src.modbus_factory import get_client
 from src.meter_reader import ThreePhaseMeterReader
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.prod.yaml')
-SLAVE_ID = 100   # DTSU666 three-phase meter address
+SLAVE_ID = 1     # DTSU666 three-phase meter address (factory default)
 
 
 def test_connection():

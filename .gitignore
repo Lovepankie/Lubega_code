@@ -5,3 +5,29 @@ __pycache__/
 ~$*
 *.tmp
 .env
+.DS_Store
+
+# Generated PDF reports (reproducible from scripts — do not commit)
+docs/*.pdf
+docs/**/*.pdf
+
+# Generated chart images (reproducible from generate_charts.py)
+docs/model_charts/
+docs/charts/
+docs/bypass_*_charts/
+
+# Large media files
+"pics and vids/"
+pics and vids/
+
+# Duplicate training data files (keep only the canonical named files)
+"docs/normal 2.csv"
+"docs/normal 3.csv"
+"docs/bypass_red 2.csv"
+
+# NOTE: docs/*.csv (training datasets) are intentionally tracked in Git.
+# They represent irreplaceable field data (~20-40 MB total, within GitHub limits).
+# If the repo grows past 1 GB, migrate CSVs to Git LFS.
+
+# NOTE: design-docs/ (architecture.dsl + ADRs) is intentionally tracked.
+# Do NOT add it here.

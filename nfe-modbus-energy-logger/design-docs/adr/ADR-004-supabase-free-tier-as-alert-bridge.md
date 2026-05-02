@@ -1,7 +1,9 @@
 # ADR-004: Supabase Free Tier as Pi-to-Dashboard Alert Bridge
 
 ## Status
-Accepted (for MVP)
+**SUPERSEDED** by [ADR-004-neon-postgresql-as-alert-bridge.md](ADR-004-neon-postgresql-as-alert-bridge.md)
+
+Supabase was rejected after discovering its free tier pauses the entire project after 7 days of inactivity — unacceptable for a monitoring system where no theft = normal (good) state. Neon PostgreSQL was chosen instead: compute scales to zero but the database remains always reachable. See the replacement ADR for full rationale.
 
 ## Context
 The Streamlit dashboard runs on Streamlit Community Cloud (a separate cloud environment with no direct network path to the Pi). The Pi must push alert data somewhere that the dashboard can read. Several bridge options were evaluated:

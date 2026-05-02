@@ -21,7 +21,7 @@ from reportlab.platypus import KeepTogether
 
 # Paths
 BASE_DIR   = os.path.join(os.path.dirname(__file__), '..')
-DATA_PATH  = os.path.join(BASE_DIR, 'data', 'normal.csv')
+DATA_PATH  = os.path.join(BASE_DIR, 'data', 'normal_final.csv')
 CHART_DIR  = os.path.join(BASE_DIR, 'docs', 'charts')
 OUTPUT_PDF = os.path.join(BASE_DIR, 'docs', 'normal_baseline_report.pdf')
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lubega Electricity Theft Detector
+After=network.target meter.service
+Requires=meter.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/nfe-modbus-energy-logger
+EnvironmentFile=/home/pi/nfe-modbus-energy-logger/.env
+ExecStart=/home/pi/nfe-modbus-energy-logger/venv/bin/python detect.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

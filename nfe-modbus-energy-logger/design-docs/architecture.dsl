@@ -1,7 +1,12 @@
 /*
  * Structurizr DSL — Lubega Power Theft Detection System
- * Repo: https://github.com/Lovepankie/Lubega_code
- * Version: v3.0.0 (inference + dashboard — feature/live-inference-dashboard branch)
+ * Repo: https://github.com/RincolTech-Solutions-ltd/Lubega_code
+ * Version: v3.1.0 (dashboard LIVE — 2026-05-03)
+ *
+ * Milestone: Streamlit dashboard deployed to Streamlit Community Cloud.
+ *   URL: lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app
+ *   Alert bridge: Neon PostgreSQL (lubega-production project)
+ *   Pending: Dennis — detect.py + theft-detector.service + Pi deployment
  *
  * C4 Levels: Context → Container → Component
  * Render: https://structurizr.com/dsl  |  structurizr-cli export -f plantuml
@@ -19,9 +24,9 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         thief = person "Electricity Thief" "Bypasses one or more CT clamps on the CHINT meter to steal electricity. This is what the system detects." "External"
 
         # ── External Systems ────────────────────────────────────────────────────
-        supabase = softwareSystem "Supabase (Free Tier)" "PostgreSQL database hosted on Supabase cloud. Stores theft alert records. Acts as the data bridge between the Pi and the Streamlit dashboard. 500 MB free tier." "External"
+        neon = softwareSystem "Neon PostgreSQL (Free Tier)" "Cloud-hosted PostgreSQL database. Stores theft alert records (alerts table) and live readings (readings table). Acts as the data bridge between the Pi and the Streamlit dashboard. Compute scales to zero on idle but DB is always reachable — no inactivity pause. Project: lubega-production." "External"
 
-        streamlitCloud = softwareSystem "Streamlit Community Cloud" "Free cloud hosting for the Streamlit dashboard. Reads alerts from Supabase and displays live meter readings and theft alert history to the utility operator." "External"
+        streamlitCloud = softwareSystem "Streamlit Community Cloud" "Free cloud hosting for the Streamlit dashboard. Connects to Neon via st.connection and displays live meter readings and theft alert history to the utility operator. URL: lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app" "External"
 
         zerotier = softwareSystem "ZeroTier VPN" "Software-defined private network connecting the Raspberry Pi to the development machine for remote access and deployment. Free up to 25 nodes." "External"
 
@@ -36,9 +41,9 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
                 # ── Metering subsystem ────────────────────────────────────────
                 meterService = component "meter.service (systemd)" "Systemd unit that runs src/main.py. Auto-restarts on failure. Starts on boot. Depends on /dev/ttyUSB0 being available." "systemd"
 
-                mainLoop = component "main.py" "Main event loop. Orchestrates polling, aggregation, and CSV writing. Runs indefinitely with a configurable poll_interval (default 10s) and log_interval (default 900s = 15 min)." "Python"
+                mainLoop = component "main.py" "Main event loop. Orchestrates polling, aggregation, and CSV writing. Runs indefinitely with a configurable poll_interval (default 10s) and log_interval (default 900s = 15 min). Also writes latest_reading_{meter_id}.json after each raw poll for detect.py to consume." "Python"
 
-                meterReader = component "meter_reader.py" "Modbus RTU register reader for CHINT DTSU666 (3-phase) and DDSU666 (1-phase). Reads 9 register groups: V_L1/L2/L3 (0x2006), I_L1/L2/L3 (0x200C), P_total/L1/L2/L3 (0x2012), PF (0x2020), F (0x2044), E (0x4000). Decodes IEEE 754 floats from 32-bit register pairs." "Python"
+                meterReader = component "meter_reader.py" "Modbus RTU register reader for CHINT DTSU666 (3-phase) and DDSU666 (1-phase). Reads 9 register groups: V_L1/L2/L3 (0x2006), I_L1/L2/L3 (0x200C), P_total/L1/L2/L3 (0x2012), PF (0x2020), F (0x2044), E (0x4000). Decodes IEEE 754 floats from 32-bit register pairs. Returns uppercase keys: I_L1, V_L1, etc." "Python"
 
                 modbusClient = component "modbus_client.py / modbus_factory.py" "PyModbus wrapper. Supports two backends: pymodbus (default, production) and mbpoll (alternative). Factory pattern selects backend from config.yaml. Retry logic on CRC or timeout errors." "Python"
 
@@ -50,22 +55,24 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
 
                 stateManager = component "state_manager.py" "Persists energy accumulation state to JSON (data/state/meter_NNN_state.json). Survives process restarts and power cuts. Restores integration continuity on startup." "Python"
 
+                latestReading = component "data/latest_reading_{meter_id}.json" "Overwritten every 10 seconds by main.py with the freshest raw poll reading (uppercase keys: I_L1, V_L1, etc.). detect.py reads this file to get the same data distribution the model was trained on — avoids the 15-min averaging problem." "JSON file — TO ADD (Step 2)"
+
                 # ── Inference subsystem (TO BUILD) ────────────────────────────
-                detectorService = component "theft-detector.service (TO BUILD)" "Systemd unit wrapping detect.py. Runs after meter.service stabilises. Restarts on failure. Runs inference every 15 minutes aligned to aggregation window." "systemd — PLANNED"
+                detectorService = component "theft-detector.service (TO BUILD)" "Systemd unit wrapping detect.py. Runs after meter.service stabilises. Restarts on failure. Reads detect.py every POLL_INTERVAL seconds." "systemd — PLANNED"
 
-                detectScript = component "detect.py (TO BUILD)" "Main inference loop. Every 15 min: reads the latest row from the active CSV, engineers 20 features, scales with scaler.pkl, runs theft_detector.pkl, logs result. If prob > threshold (e.g. 0.7), constructs an alert and POSTs it to Supabase REST API." "Python — PLANNED"
+                detectScript = component "detect.py (TO BUILD)" "Main inference loop. Every 10s: reads latest_reading_{meter_id}.json, engineers 20 features, scales with scaler.pkl, runs theft_detector.pkl. If prob > threshold (0.5), INSERTs alert into Neon PostgreSQL via psycopg2. Skips if reading unchanged since last cycle." "Python — PLANNED"
 
-                featureEngineer = component "feature_engineering.py (TO BUILD)" "20-feature engineering pipeline extracted from train_model.py. Takes one raw reading row (9 values) and returns a 20-element feature vector: I_imbalance, V_imbalance, I_L1/L2/L3_zero (flags), V_L1/L2/L3_zero (flags), PF_zero, I_total, P_per_I." "Python — PLANNED"
+                featureEngineer = component "feature_engineering.py (TO REWRITE)" "20-feature engineering pipeline. Takes one raw reading dict (uppercase keys from meter_reader.py) and returns 20 features: I_L1/L2/L3, V_L1/L2/L3, P_total, PF_total, frequency + I_imbalance, V_imbalance, I_L1/L2/L3_zero (flags), V_L1/L2/L3_zero (flags), PF_zero, I_total, P_per_I. Current file uses lowercase keys — must be rewritten to match training data." "Python — NEEDS REWRITE"
 
                 # ── ML Model artefacts ────────────────────────────────────────
                 theftDetectorModel = component "theft_detector.pkl" "Trained VotingClassifier (soft voting): RandomForestClassifier (200 trees, max_depth=15, balanced class weights) + XGBClassifier (200 rounds, max_depth=6, scaled_pos_weight). Test AUC=1.0000. 14.4 MB on disk." "Joblib / scikit-learn"
 
                 scalerModel = component "scaler.pkl" "StandardScaler fitted on all 20 features from the ~160K-row training set. Must be applied before inference. 1.5 KB." "Joblib / scikit-learn"
 
-                featuresFile = component "features.pkl" "Ordered list of 20 feature names. Used to ensure feature ordering matches what the model was trained on." "Joblib / Python list"
+                featuresFile = component "features.pkl" "Ordered list of 20 feature names (uppercase). Used to ensure feature ordering matches what the model was trained on. Keys: I_L1, I_L2, I_L3, V_L1, V_L2, V_L3, P_total, PF_total, frequency, I_imbalance, V_imbalance, I_L1_zero, I_L2_zero, I_L3_zero, V_L1_zero, V_L2_zero, V_L3_zero, PF_zero, I_total, P_per_I." "Joblib / Python list"
 
                 # ── Data storage on Pi ────────────────────────────────────────
-                csvStore = component "data/ (CSV files)" "Per-meter daily CSV files. 96 rows/day (4/hour at 15-min intervals). ~10-15 KB/day per meter. Rotated and gzip-compressed at 50,000 rows (~17 months). detect.py reads the active file's last row." "FileSystem"
+                csvStore = component "data/ (CSV files)" "Per-meter daily CSV files. 96 rows/day (4/hour at 15-min intervals). ~10-15 KB/day per meter. Rotated and gzip-compressed at 50,000 rows (~17 months)." "FileSystem"
 
                 configFile = component "config/config.prod.yaml" "YAML config: Modbus port (/dev/ttyUSB0), meter definitions (id, name, type, enabled), poll_interval, log_interval, logging paths. Not committed to Git (environment-specific)." "YAML"
             }
@@ -80,12 +87,12 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
                 reportScripts = component "scripts/generate_*_report.py (9 scripts)" "PDF report generators using ReportLab + Matplotlib. Produces model_report.pdf and 8 scenario bypass analysis reports. Output goes to docs/." "Python / ReportLab"
             }
 
-            # ── Streamlit Dashboard (TO BUILD) ────────────────────────────────
-            streamlitApp = container "Streamlit Dashboard (TO BUILD)" "Web dashboard for utility operators. Hosted on Streamlit Community Cloud (free tier, GitHub-connected). Reads alert data from Supabase. Shows live-ish meter readings and theft alert log." "Python / Streamlit" "Web App — PLANNED" {
+            # ── Streamlit Dashboard (LIVE) ─────────────────────────────────────
+            streamlitApp = container "Streamlit Dashboard (LIVE)" "Web dashboard for utility operators. Hosted on Streamlit Community Cloud. Reads alert data from Neon PostgreSQL. Shows KPI metrics, colour-coded alerts table, live readings charts, and alert trend. URL: lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app" "Python / Streamlit" "Web App" {
 
-                dashboardMain = component "app/app.py (TO BUILD)" "Streamlit main app. Pages: Live Readings (latest meter values from Supabase), Alert Log (sortable table of theft alerts with timestamp + confidence), Charts (current imbalance trend). Auto-refreshes every 30-60s via st.rerun()." "Python / Streamlit — PLANNED"
+                dashboardMain = component "streamlit_app.py" "Streamlit main app. KPI row (total alerts, 24h count, latest probability, last alert time). Left column: colour-coded theft alerts table (red >=90%, yellow >=70%). Right column: live readings tabs (Current/Voltage/Power line charts). Alert trend bar chart. Auto-refreshes every 30s. NEON_DATABASE_URL loaded from st.secrets." "Python / Streamlit"
 
-                supabaseClient = component "Supabase Python client (TO BUILD)" "supabase-py client connecting to Supabase project. Reads from `alerts` table and `readings` table. Used by Streamlit app." "Python / supabase-py — PLANNED"
+                neonConn = component "st.connection (neon, type=sql)" "Streamlit built-in SQL connection using psycopg2 under the hood. Connects to Neon PostgreSQL via NEON_DATABASE_URL secret. Queries alerts and readings tables with TTL=30s caching." "Python / SQLAlchemy"
             }
         }
 
@@ -93,8 +100,8 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         thief -> chintMeter "Bypasses CT clamp on" "Physical tampering"
         chintMeter -> lubegaSystem "Reports altered readings to"
         lubegaSystem -> utility "Sends theft alert to" "Streamlit dashboard"
-        lubegaSystem -> supabase "Stores alerts in" "HTTP POST (REST API)"
-        streamlitCloud -> supabase "Reads alerts from" "REST API"
+        lubegaSystem -> neon "Stores alerts in" "psycopg2 direct connection"
+        streamlitCloud -> neon "Reads alerts from" "st.connection / psycopg2"
         utility -> streamlitCloud "Monitors dashboard on"
         engineer -> lubegaSystem "Deploys, trains, and maintains"
         engineer -> zerotier "Uses for remote Pi access"
@@ -102,8 +109,8 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
 
         # ── Relationships — Container ───────────────────────────────────────────
         chintMeter -> piApp "Sends Modbus RTU readings to" "RS485 / 9600 baud"
-        piApp -> supabase "POSTs theft alerts to" "HTTP REST API (supabase-py)"
-        streamlitApp -> supabase "Reads alerts and readings from" "REST API"
+        piApp -> neon "INSERTs theft alerts to" "psycopg2 direct TCP connection"
+        streamlitApp -> neon "Reads alerts and readings from" "st.connection (psycopg2 / SQLAlchemy)"
         utility -> streamlitApp "Views on browser"
         engineer -> devMachine "Trains models and writes code on"
         devMachine -> piApp "Deploys code and model to" "SSH / SCP via ZeroTier"
@@ -113,6 +120,7 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         mainLoop -> meterReader "Calls every poll_interval (10s)"
         mainLoop -> aggregator "Feeds readings into"
         mainLoop -> csvLogger "Triggers log write every log_interval (900s)"
+        mainLoop -> latestReading "Overwrites with raw reading every 10s"
         mainLoop -> configFile "Reads at startup"
         meterReader -> modbusClient "Issues register reads via"
         modbusClient -> chintMeter "Sends Modbus RTU requests to" "RS485"
@@ -122,13 +130,13 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         csvLogger -> stateManager "Reads/writes energy state via"
 
         # ── Relationships — Component (Pi inference, PLANNED) ───────────────────
-        detectorService -> detectScript "Runs every 15 min"
-        detectScript -> csvStore "Reads latest aggregate row from"
-        detectScript -> featureEngineer "Passes raw row to"
+        detectorService -> detectScript "Runs every POLL_INTERVAL seconds"
+        detectScript -> latestReading "Reads latest raw reading from"
+        detectScript -> featureEngineer "Passes raw reading dict to"
         featureEngineer -> featuresFile "Uses feature order from"
         detectScript -> scalerModel "Scales feature vector with"
         detectScript -> theftDetectorModel "Runs predict_proba() on"
-        detectScript -> supabase "POSTs alert record to if prob > threshold" "HTTP REST API"
+        detectScript -> neon "INSERTs alert record if prob > threshold" "psycopg2 TCP"
 
         # ── Relationships — Component (dev machine) ─────────────────────────────
         trainScript -> theftDetectorModel "Produces"
@@ -138,8 +146,8 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         reportScripts -> theftDetectorModel "Reads for evaluation reports"
 
         # ── Relationships — Component (dashboard) ───────────────────────────────
-        dashboardMain -> supabaseClient "Queries via"
-        supabaseClient -> supabase "Reads alerts from" "REST API"
+        dashboardMain -> neonConn "Queries via"
+        neonConn -> neon "Reads alerts + readings from" "psycopg2 / SQLAlchemy"
     }
 
     views {
@@ -157,7 +165,7 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
             include *
             autoLayout lr
             title "Power Theft Detection — Containers"
-            description "Four main containers: Pi (edge), Dev Machine (training), Streamlit (dashboard), Supabase (alert store)."
+            description "Four main containers: Pi (edge), Dev Machine (training), Streamlit dashboard (LIVE), Neon PostgreSQL (alert store)."
         }
 
         # ── Component — Pi full ───────────────────────────────────────────────────
@@ -165,31 +173,31 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
             include *
             autoLayout tb
             title "Raspberry Pi — All Components"
-            description "Metering subsystem (built) + inference subsystem (planned). Items marked TO BUILD are the missing critical path to live detection."
+            description "Metering subsystem (built) + inference subsystem (planned). Items marked TO BUILD/REWRITE are the remaining critical path to live detection."
         }
 
         # ── Component — metering only ─────────────────────────────────────────────
         component piApp "Components_Metering" {
-            include meterService mainLoop meterReader modbusClient aggregator energyCalc csvLogger stateManager csvStore configFile chintMeter
+            include meterService mainLoop meterReader modbusClient aggregator energyCalc csvLogger stateManager csvStore configFile chintMeter latestReading
             autoLayout tb
             title "Metering Subsystem (COMPLETE)"
-            description "The complete data collection pipeline: Modbus poll → 15-min aggregate → CSV. All built and deployed."
+            description "The complete data collection pipeline: Modbus poll → 15-min aggregate → CSV. Also writes latest_reading.json for inference."
         }
 
         # ── Component — inference path (critical path) ────────────────────────────
         component piApp "Components_Inference" {
-            include detectorService detectScript featureEngineer scalerModel theftDetectorModel featuresFile csvStore supabase
+            include detectorService detectScript featureEngineer scalerModel theftDetectorModel featuresFile latestReading neon
             autoLayout tb
             title "Inference Subsystem (TO BUILD — Critical Path)"
-            description "The missing inference pipeline. detect.py + theft-detector.service + Supabase push = live detection."
+            description "The missing inference pipeline. detect.py + theft-detector.service + Neon push = live detection. Dennis owns this."
         }
 
         # ── Component — dashboard ─────────────────────────────────────────────────
         component streamlitApp "Components_Dashboard" {
-            include dashboardMain supabaseClient supabase utility
+            include dashboardMain neonConn neon utility
             autoLayout lr
-            title "Streamlit Dashboard (TO BUILD)"
-            description "The operator-facing alert and monitoring dashboard."
+            title "Streamlit Dashboard (LIVE — lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app)"
+            description "The operator-facing alert and monitoring dashboard. Live. Waiting for Pi inference to start producing alerts."
         }
 
         # ── Component — training pipeline ─────────────────────────────────────────
@@ -234,11 +242,10 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
                 background "#2C3E50"
                 color "#ffffff"
             }
-            element "Web App — PLANNED" {
+            element "Web App" {
                 shape WebBrowser
-                background "#8E44AD"
+                background "#1A6B2A"
                 color "#ffffff"
-                border dashed
             }
             element "Software System" {
                 background "#1168BD"

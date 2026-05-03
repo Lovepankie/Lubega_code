@@ -36,12 +36,12 @@ Add 3 lines to `main.py` so it writes a `data/latest_reading.json` file after ev
 
 ## What's Left — Chronological Order
 
-### STEP 1 — Hillary: Set up Neon PostgreSQL *(~30 min)*
-> **Do this first. Dennis cannot test his INSERT code without the database URL.**
+### STEP 1 — Hillary: Set up Neon PostgreSQL *(~30 min)* ✅ DONE
+> **Neon project `lubega-production` is live. Schema created. URL sent to Dennis.**
 
-1. Go to [neon.tech](https://neon.tech) → sign in (same account as DSN project)
-2. Create a new project: **`lubega-production`**
-3. Open the SQL editor and run:
+1. ~~Go to [neon.tech](https://neon.tech) → sign in (same account as DSN project)~~
+2. ~~Create a new project: **`lubega-production`**~~
+3. ~~Open the SQL editor and run:~~
 
 ```sql
 CREATE TABLE alerts (
@@ -284,8 +284,8 @@ sudo journalctl -fu theft-detector    # watch logs live
 
 ---
 
-### STEP 7 — Hillary: Write `app/app.py` *(~3 hrs)*
-> Can be started any time after Step 1. Finish after Dennis confirms Step 6.
+### STEP 7 — Hillary: Write `streamlit_app.py` *(~3 hrs)* ✅ DONE
+> Live at `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app`. Reads from Neon. Showing "No alerts yet — system monitoring."
 
 **File:** `app/app.py`
 
@@ -324,24 +324,21 @@ Build from there — add colour coding for high-probability alerts, per-phase ch
 
 ---
 
-### STEP 8 — Hillary: Deploy to Streamlit Community Cloud *(~30 min)*
+### STEP 8 — Hillary: Deploy to Streamlit Community Cloud *(~30 min)* ✅ DONE
 
-1. Push `app/app.py` to GitHub on the `feature/live-inference-dashboard` branch
-2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
-3. Connect to the `Lubega_code` GitHub repo
-4. Set: Branch = `feature/live-inference-dashboard`, Main file = `app/app.py`
-5. Under **Secrets**, add:
-   ```toml
-   NEON_DATABASE_URL = "postgresql://neondb_owner:..."
-   ```
-6. Deploy → copy the public URL → share with Dennis
+Dashboard is **LIVE** at: `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app`
+
+- Repo: `RincolTech-Solutions-ltd/Lubega_code`, branch `main`, file `streamlit_app.py`
+- `NEON_DATABASE_URL` secret configured in Streamlit Cloud secrets
+- App shows KPIs, colour-coded alerts table, live readings tabs (Current/Voltage/Power), alert trend chart
 
 ---
 
-### STEP 9 — Both: Full end-to-end test *(~1 hr together)*
+### STEP 9 — Both: Full end-to-end test *(~1 hr together)* ⏳ WAITING FOR DENNIS
 
-- Dennis simulates a bypass on the live meter (or edits `latest_reading_1.json` as in Step 6)
-- Both watch the Streamlit dashboard — alert should appear within 10–20 seconds
+- Dashboard is ready and watching Neon — alert will appear the moment Dennis's detect.py fires
+- Dennis simulates a bypass (edit `latest_reading_1.json`, set `I_L1=0.0`)
+- Both watch `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app` — alert should appear within 30s
 - Confirm timestamp, probability score, and phase readings are correct
 - **Done — system is live**
 
@@ -369,17 +366,19 @@ Dennis  → Step 2 (main.py hook → latest_reading.json)          Hillary → S
 ## Key Files Reference
 
 ```
-Lubega_code/
+Lubega_code/  (repo: RincolTech-Solutions-ltd/Lubega_code, branch: main)
 ├── WORK_PLAN.md                          ← you are here
-├── Lubega_Project_Report.docx            ← fill in student names + reg numbers
-├── Lubega_Project_Presentation.pptx      ← fill in student names + reg numbers
+├── streamlit_app.py                      ← ✅ LIVE at lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app
+├── requirements.txt                      ← ✅ done (streamlit, pandas, psycopg2-binary, sqlalchemy)
+├── Lubega_Project_Report.docx            ← fill in student names + reg numbers (updated 2026-05-03)
+├── Lubega_Project_Presentation.pptx      ← fill in student names + reg numbers (updated 2026-05-03)
 ├── nfe-modbus-energy-logger/
 │   ├── src/
 │   │   ├── meter_reader.py               ← ✅ done
 │   │   ├── aggregator.py                 ← ✅ done
 │   │   ├── main.py                       ← ✅ done (+3 lines Dennis adds in Step 2)
-│   │   └── feature_engineering.py        ← ❌ Dennis writes (Step 3)
-│   ├── detect.py                         ← ❌ Dennis writes (Step 4)
+│   │   └── feature_engineering.py        ← ❌ Dennis rewrites (Step 3) — current version uses wrong key casing
+│   ├── detect.py                         ← ❌ Dennis rewrites (Step 4) — current version reads CSV not JSON
 │   ├── systemd/
 │   │   ├── meter.service                 ← ✅ done (running on Pi)
 │   │   └── theft-detector.service        ← ❌ Dennis writes (Step 5)
@@ -388,10 +387,10 @@ Lubega_code/
 │   │   ├── scaler.pkl                    ← ✅ done
 │   │   └── features.pkl                  ← ✅ done
 │   └── design-docs/
-│       ├── architecture.dsl              ← ✅ done
+│       ├── architecture.dsl              ← ✅ updated 2026-05-03
 │       └── adr/                          ← ✅ done (ADR-001 to ADR-004)
 └── app/
-    └── app.py                            ← ❌ Hillary writes (Step 6)
+    └── app.py                            ← ✅ same content as streamlit_app.py (Hillary's reference copy)
 ```
 
 ---

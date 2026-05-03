@@ -21,6 +21,19 @@
 
 ---
 
+## Important: Training Data vs. Production Data
+
+The model was trained on **raw 10-second poll rows** (one row per Modbus read — see `docs/*.csv`).  
+But `meter.service` in production only writes **15-minute aggregated rows** to CSV.
+
+Feeding detect.py a 15-minute average would break the model — it has never seen averaged data.  
+A bypass halfway through a 15-min window dilutes `I_L1` from 0 to ~0.3 A → the `I_L1_zero` flag never fires.
+
+**The fix (Option A — no retraining needed):**  
+Add 3 lines to `main.py` so it writes a `data/latest_reading.json` file after every raw poll (overwriting it each time). detect.py reads this file every 10 seconds — same format, same distribution the model was trained on.
+
+---
+
 ## What's Left — Chronological Order
 
 ### STEP 1 — Hillary: Set up Neon PostgreSQL *(~30 min)*
@@ -59,54 +72,79 @@ CREATE TABLE readings (
 
 ---
 
-### STEP 2 — Dennis: Write `feature_engineering.py` *(~2 hrs)*
+### STEP 2 — Dennis: Add `latest_reading.json` hook to `main.py` *(~15 min)*
 
-**File:** `nfe-modbus-energy-logger/src/feature_engineering.py`
+**File:** `nfe-modbus-energy-logger/src/main.py`
 
-Takes one row from the aggregated CSV, returns a dict of all 20 features:
+After the line `reading = reader.read(client)` succeeds (i.e., `reading is not None`), add these 3 lines to write the raw reading to a file that detect.py can consume:
 
 ```python
-def engineer_features(row):
-    i_l1, i_l2, i_l3 = row['i_l1'], row['i_l2'], row['i_l3']
-    v_l1, v_l2, v_l3 = row['v_l1'], row['v_l2'], row['v_l3']
-    i_total = i_l1 + i_l2 + i_l3
-
-    return {
-        # raw (9)
-        'i_l1': i_l1, 'i_l2': i_l2, 'i_l3': i_l3,
-        'v_l1': v_l1, 'v_l2': v_l2, 'v_l3': v_l3,
-        'p_total':   row['p_total'],
-        'pf_total':  row['pf_total'],
-        'frequency': row['frequency'],
-        # engineered (11)
-        'i_imbalance': max(i_l1,i_l2,i_l3) - min(i_l1,i_l2,i_l3),
-        'v_imbalance': max(v_l1,v_l2,v_l3) - min(v_l1,v_l2,v_l3),
-        'i_l1_zero':   1 if i_l1 < 0.01 else 0,
-        'i_l2_zero':   1 if i_l2 < 0.01 else 0,
-        'i_l3_zero':   1 if i_l3 < 0.01 else 0,
-        'v_l1_zero':   1 if v_l1 < 10 else 0,
-        'v_l2_zero':   1 if v_l2 < 10 else 0,
-        'v_l3_zero':   1 if v_l3 < 10 else 0,
-        'pf_zero':     1 if row['pf_total'] < 0.05 else 0,
-        'i_total':     i_total,
-        'p_per_i':     row['p_total'] / (i_total + 0.001),
-    }
+# After: reading = reader.read(client)
+# Add immediately after the `if reading is None: continue` block:
+import json, pathlib
+pathlib.Path(cfg['logging']['base_dir']).mkdir(parents=True, exist_ok=True)
+with open(f"{cfg['logging']['base_dir']}/latest_reading_{meter_id}.json", 'w') as _f:
+    json.dump({'meter_id': meter_id, 'meter_name': components['name'], **reading}, _f)
 ```
 
-**Test it:** load any row from `docs/*.csv` using pandas and print the output. All 20 keys must be present.
-
-> **Critical:** The feature names and order must exactly match what the model was trained on.  
-> Load `model/features.pkl` and verify your dict keys match that list before proceeding to Step 3.
+This overwrites the file every 10 seconds with the freshest raw poll — detect.py reads it.  
+Put the `import json, pathlib` at the top of main.py with the other imports, not inside the loop.
 
 ---
 
-### STEP 3 — Dennis: Write `detect.py` *(~3 hrs)*
+### STEP 3 — Dennis: Write `feature_engineering.py` *(~2 hrs)*
+
+**File:** `nfe-modbus-energy-logger/src/feature_engineering.py`
+
+Takes one raw reading dict (from `latest_reading.json`) and returns all 20 features.  
+**Keys are uppercase** — that is what `meter_reader.py` returns and what the model was trained on.
+
+```python
+def engineer_features(reading: dict) -> dict:
+    I_L1 = reading['I_L1']
+    I_L2 = reading['I_L2']
+    I_L3 = reading['I_L3']
+    V_L1 = reading['V_L1']
+    V_L2 = reading['V_L2']
+    V_L3 = reading['V_L3']
+    I_total = I_L1 + I_L2 + I_L3
+
+    return {
+        # raw (9)
+        'I_L1': I_L1, 'I_L2': I_L2, 'I_L3': I_L3,
+        'V_L1': V_L1, 'V_L2': V_L2, 'V_L3': V_L3,
+        'P_total':   reading['P_total'],
+        'PF_total':  reading['PF_total'],
+        'frequency': reading['frequency'],
+        # engineered (11)
+        'I_imbalance': max(I_L1,I_L2,I_L3) - min(I_L1,I_L2,I_L3),
+        'V_imbalance': max(V_L1,V_L2,V_L3) - min(V_L1,V_L2,V_L3),
+        'I_L1_zero':   1 if I_L1 < 0.01 else 0,
+        'I_L2_zero':   1 if I_L2 < 0.01 else 0,
+        'I_L3_zero':   1 if I_L3 < 0.01 else 0,
+        'V_L1_zero':   1 if V_L1 < 10 else 0,
+        'V_L2_zero':   1 if V_L2 < 10 else 0,
+        'V_L3_zero':   1 if V_L3 < 10 else 0,
+        'PF_zero':     1 if reading['PF_total'] < 0.05 else 0,
+        'I_total':     I_total,
+        'P_per_I':     reading['P_total'] / (I_total + 0.001),
+    }
+```
+
+**Test it:** load any row from `docs/*.csv` using pandas, convert to dict, pass to `engineer_features()`, print output. All 20 keys must be present.
+
+> **Critical:** Load `model/features.pkl` and verify your dict keys match that list exactly (case included) before proceeding to Step 4.
+
+---
+
+### STEP 4 — Dennis: Write `detect.py` *(~3 hrs)*
 
 **File:** `nfe-modbus-energy-logger/detect.py`
 
+Reads `latest_reading_{meter_id}.json` (written by main.py every 10s), runs inference on each raw poll — same data distribution the model was trained on.
+
 ```python
-import os, pickle, time, logging
-import pandas as pd
+import os, json, pickle, time, logging
 import psycopg2
 from dotenv import load_dotenv
 from src.feature_engineering import engineer_features
@@ -115,30 +153,44 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
 
 load_dotenv()
-NEON_URL  = os.environ['NEON_DATABASE_URL']
-THRESHOLD = float(os.environ.get('THEFT_THRESHOLD', '0.5'))
-CSV_PATH  = os.environ.get('CSV_PATH', 'data/current.csv')
-METER_ID  = int(os.environ.get('METER_ID', '1'))
+NEON_URL   = os.environ['NEON_DATABASE_URL']
+THRESHOLD  = float(os.environ.get('THEFT_THRESHOLD', '0.5'))
+DATA_DIR   = os.environ.get('DATA_DIR', 'data')
+METER_ID   = int(os.environ.get('METER_ID', '1'))
 METER_NAME = os.environ.get('METER_NAME', 'Meter-01')
+POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))  # seconds, match meter poll
 
 # Load model artefacts once at startup
-with open('model/theft_detector.pkl', 'rb') as f: model  = pickle.load(f)
-with open('model/scaler.pkl',         'rb') as f: scaler = pickle.load(f)
+with open('model/theft_detector.pkl', 'rb') as f: model    = pickle.load(f)
+with open('model/scaler.pkl',         'rb') as f: scaler   = pickle.load(f)
 with open('model/features.pkl',       'rb') as f: features = pickle.load(f)
 
-logging.info("Model loaded. Starting inference loop.")
+logging.info(f"Model loaded. Watching {DATA_DIR}/latest_reading_{METER_ID}.json")
+
+last_seen = None  # track file content to avoid re-running on same reading
 
 while True:
     try:
-        df  = pd.read_csv(CSV_PATH)
-        row = df.iloc[-1]                          # last 15-min window
-        feat_dict  = engineer_features(row)
-        X          = [feat_dict[f] for f in features]   # ordered correctly
-        X_scaled   = scaler.transform([X])
-        prob       = model.predict_proba(X_scaled)[0][1] # P(theft)
-        pred       = 1 if prob >= THRESHOLD else 0
+        json_path = f"{DATA_DIR}/latest_reading_{METER_ID}.json"
+        with open(json_path) as f:
+            reading = json.load(f)
 
-        logging.info(f"pred={pred} prob={prob:.4f}")
+        # Skip if same reading as last cycle
+        reading_key = str(reading)
+        if reading_key == last_seen:
+            time.sleep(POLL_INTERVAL)
+            continue
+        last_seen = reading_key
+
+        # Engineer features and run inference
+        feat_dict = engineer_features(reading)
+        X         = [feat_dict[f] for f in features]   # order must match training
+        X_scaled  = scaler.transform([X])
+        prob      = model.predict_proba(X_scaled)[0][1]  # P(theft)
+        pred      = 1 if prob >= THRESHOLD else 0
+
+        logging.info(f"pred={pred}  prob={prob:.4f}  "
+                     f"I_L1={reading['I_L1']}  I_L2={reading['I_L2']}  I_L3={reading['I_L3']}")
 
         if pred == 1:
             try:
@@ -151,34 +203,37 @@ while True:
                         p_total, pf_total, frequency)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (METER_ID, METER_NAME, pred, prob,
-                     row.i_l1, row.i_l2, row.i_l3,
-                     row.v_l1, row.v_l2, row.v_l3,
-                     row.p_total, row.pf_total, row.frequency)
+                     reading['I_L1'], reading['I_L2'], reading['I_L3'],
+                     reading['V_L1'], reading['V_L2'], reading['V_L3'],
+                     reading['P_total'], reading['PF_total'], reading['frequency'])
                 )
                 conn.commit()
                 conn.close()
-                logging.info("Alert inserted into Neon.")
+                logging.warning(f"THEFT ALERT inserted — prob={prob:.4f}")
             except Exception as e:
-                logging.error(f"Neon insert failed: {e}")  # don't crash inference
+                logging.error(f"Neon insert failed: {e}")  # log but don't crash
 
+    except FileNotFoundError:
+        logging.warning(f"Waiting for {json_path} — is meter.service running?")
     except Exception as e:
         logging.error(f"Inference error: {e}")
 
-    time.sleep(900)  # wait for next 15-min window
+    time.sleep(POLL_INTERVAL)
 ```
 
 **Create `.env` on the Pi** (never commit this file):
 ```
 NEON_DATABASE_URL=postgresql://neondb_owner:<password>@<endpoint>.neon.tech/neondb?sslmode=require
 THEFT_THRESHOLD=0.5
-CSV_PATH=/home/pi/nfe-modbus-energy-logger/data/current.csv
+DATA_DIR=/home/pi/nfe-modbus-energy-logger/data
 METER_ID=1
 METER_NAME=Meter-01
+POLL_INTERVAL=10
 ```
 
 ---
 
-### STEP 4 — Dennis: Write `theft-detector.service` *(~30 min)*
+### STEP 5 — Dennis: Write `theft-detector.service` *(~30 min)*
 
 **File:** `nfe-modbus-energy-logger/systemd/theft-detector.service`
 
@@ -212,24 +267,25 @@ sudo journalctl -fu theft-detector    # watch logs live
 
 ---
 
-### STEP 5 — Dennis: End-to-end test on Pi *(~1 hr)*
+### STEP 6 — Dennis: End-to-end test on Pi *(~1 hr)*
 
-1. Confirm `meter.service` is writing to CSV normally:
+1. Confirm `meter.service` is running and writing `latest_reading_1.json`:
    ```bash
-   tail -f data/current.csv
+   watch -n 2 cat data/latest_reading_1.json
    ```
 2. Start `theft-detector.service` and watch logs:
    ```bash
    sudo journalctl -fu theft-detector
    ```
-3. **Simulate a theft** — manually edit the last row of `current.csv`, set `i_l1=0.000` (L1 bypass). Wait up to 15 min for the next inference cycle, or restart detect.py to trigger immediately.
+3. **Simulate a theft** — temporarily edit `latest_reading_1.json`, set `I_L1` to `0.0`. The next detect.py cycle (within 10 seconds) should fire and INSERT into Neon.
 4. Check the Neon SQL editor — confirm a row appeared in the `alerts` table.
-5. **Tell Hillary:** "Neon is receiving alerts" — that is his go signal to deploy the dashboard.
+5. Restore `latest_reading_1.json` to normal (meter.service will overwrite it automatically within 10s anyway).
+6. **Tell Hillary:** "Neon is receiving alerts" — that is his go signal to deploy the dashboard.
 
 ---
 
-### STEP 6 — Hillary: Write `app/app.py` *(~3 hrs)*
-> Can be started any time after Step 1. Finish after Dennis confirms Step 5.
+### STEP 7 — Hillary: Write `app/app.py` *(~3 hrs)*
+> Can be started any time after Step 1. Finish after Dennis confirms Step 6.
 
 **File:** `app/app.py`
 
@@ -268,7 +324,7 @@ Build from there — add colour coding for high-probability alerts, per-phase ch
 
 ---
 
-### STEP 7 — Hillary: Deploy to Streamlit Community Cloud *(~30 min)*
+### STEP 8 — Hillary: Deploy to Streamlit Community Cloud *(~30 min)*
 
 1. Push `app/app.py` to GitHub on the `feature/live-inference-dashboard` branch
 2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
@@ -282,10 +338,10 @@ Build from there — add colour coding for high-probability alerts, per-phase ch
 
 ---
 
-### STEP 8 — Both: Full end-to-end test *(~1 hr together)*
+### STEP 9 — Both: Full end-to-end test *(~1 hr together)*
 
-- Dennis simulates a bypass on the live meter (or edits a CSV row as in Step 5)
-- Both watch the Streamlit dashboard — alert should appear within 15 minutes
+- Dennis simulates a bypass on the live meter (or edits `latest_reading_1.json` as in Step 6)
+- Both watch the Streamlit dashboard — alert should appear within 10–20 seconds
 - Confirm timestamp, probability score, and phase readings are correct
 - **Done — system is live**
 
@@ -294,15 +350,16 @@ Build from there — add colour coding for high-probability alerts, per-phase ch
 ## Dependency Map
 
 ```
-Hillary → Step 1 (Neon setup) ─────────────────────────────────────────────────────────┐
-                 │ sends NEON_DATABASE_URL to Dennis                                    │
-                 ↓                                                                      ↓
-Dennis  → Step 2 (feature_engineering.py)                               Hillary → Step 6 (app.py)
-            → Step 3 (detect.py)                                                  → Step 7 (deploy)
-              → Step 4 (systemd service)                                                │
-                → Step 5 (Pi test) ─── "alerts flowing" signal ────────────────────────┘
-                                                                                        ↓
-                                                                    Both → Step 8 (end-to-end test)
+Hillary → Step 1 (Neon setup) ──────────────────────────────────────────────────────────┐
+                 │ sends NEON_DATABASE_URL to Dennis                                     │
+                 ↓                                                                       ↓
+Dennis  → Step 2 (main.py hook → latest_reading.json)          Hillary → Step 7 (app.py)
+            → Step 3 (feature_engineering.py)                             → Step 8 (deploy)
+              → Step 4 (detect.py)                                                       │
+                → Step 5 (systemd service)                                               │
+                  → Step 6 (Pi test) ─── "alerts flowing" signal ───────────────────────┘
+                                                                                         ↓
+                                                                     Both → Step 9 (end-to-end test)
 ```
 
 **Estimated time:** one focused weekend.
@@ -320,11 +377,12 @@ Lubega_code/
 │   ├── src/
 │   │   ├── meter_reader.py               ← ✅ done
 │   │   ├── aggregator.py                 ← ✅ done
-│   │   └── feature_engineering.py        ← ❌ Dennis writes (Step 2)
-│   ├── detect.py                         ← ❌ Dennis writes (Step 3)
+│   │   ├── main.py                       ← ✅ done (+3 lines Dennis adds in Step 2)
+│   │   └── feature_engineering.py        ← ❌ Dennis writes (Step 3)
+│   ├── detect.py                         ← ❌ Dennis writes (Step 4)
 │   ├── systemd/
 │   │   ├── meter.service                 ← ✅ done (running on Pi)
-│   │   └── theft-detector.service        ← ❌ Dennis writes (Step 4)
+│   │   └── theft-detector.service        ← ❌ Dennis writes (Step 5)
 │   ├── model/
 │   │   ├── theft_detector.pkl            ← ✅ done (14.4 MB)
 │   │   ├── scaler.pkl                    ← ✅ done

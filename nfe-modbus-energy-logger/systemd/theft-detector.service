@@ -5,10 +5,10 @@ Requires=meter.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/nfe-modbus-energy-logger
-EnvironmentFile=/home/pi/nfe-modbus-energy-logger/.env
-ExecStart=/home/pi/nfe-modbus-energy-logger/venv/bin/python detect.py
+User=nfetestpi2
+WorkingDirectory=/home/nfetestpi2/Lubega_code/nfe-modbus-energy-logger
+EnvironmentFile=/home/nfetestpi2/Lubega_code/nfe-modbus-energy-logger/.env
+ExecStart=/home/nfetestpi2/Lubega_code/nfe-modbus-energy-logger/venv/bin/python detect.py
 Restart=on-failure
 RestartSec=10
 

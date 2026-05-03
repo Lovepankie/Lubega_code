@@ -2,6 +2,7 @@ import time
 import yaml
 import sys
 import os
+import json
 from datetime import datetime
 
 from .modbus_factory import get_client
@@ -183,6 +184,10 @@ while True:
             if reading is None:
                 print(f"⚠️  Meter {meter_id} ({components['name']}): Read failed, skipping...")
                 continue
+
+            # Write latest raw reading for detect.py (overwrites every poll)
+            with open(f"{cfg['logging']['base_dir']}/latest_reading_{meter_id}.json", 'w') as _f:
+                json.dump({'meter_id': meter_id, 'meter_name': components['name'], **reading}, _f)
 
             # Update energy calculation (only for three-phase meters)
             if calc is not None and reading['phases'] is not None:

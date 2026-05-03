@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Binary model artefacts — never touch line endings
+*.pkl binary
+*.joblib binary
+*.h5 binary
+*.pt binary

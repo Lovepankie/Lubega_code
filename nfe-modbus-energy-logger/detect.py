@@ -1,7 +1,8 @@
 import os
-import pickle
 import time
 import logging
+
+import joblib
 
 import pandas as pd
 import psycopg2
@@ -23,12 +24,9 @@ METER_ID   = int(os.environ.get('METER_ID', '1'))
 METER_NAME = os.environ.get('METER_NAME', 'Meter-01')
 
 # Load model artefacts once at startup
-with open('model/theft_detector.pkl', 'rb') as f:
-    model = pickle.load(f)
-with open('model/scaler.pkl', 'rb') as f:
-    scaler = pickle.load(f)
-with open('model/features.pkl', 'rb') as f:
-    features = pickle.load(f)
+model    = joblib.load('model/theft_detector.pkl')
+scaler   = joblib.load('model/scaler.pkl')
+features = joblib.load('model/features.pkl')
 
 logging.info("Model loaded. Feature count: %d. Starting inference loop.", len(features))
 if not NEON_URL:

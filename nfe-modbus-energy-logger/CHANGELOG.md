@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 
 ---
 
+## 🚀 [4.0.0] - 2026-05-04
+
+### 🎉 System Fully Live — End-to-End Theft Detection in Production
+
+The entire pipeline is now running end-to-end on the Pi (`nfetestpi2`), writing alerts
+and readings to Neon PostgreSQL in real time, and visible on the Streamlit Cloud dashboard.
+
+### ✅ Added
+- 📡 **`latest_reading_{meter_id}.json` hook in `src/main.py`** — 3-line addition (lines 188-190) that
+  overwrites a JSON file with the freshest raw Modbus reading after every 10-second poll. This is the
+  bridge between `meter.service` and `detect.py`, ensuring inference always sees the same data
+  distribution the model was trained on (raw 10s readings, not 15-min averages).
+- 🤖 **`detect.py` (Dennis)** — Full inference loop polling `latest_reading_{meter_id}.json` every 10s.
+  Engineers 20 features, scales with `scaler.pkl`, runs `theft_detector.pkl` VotingClassifier.
+  INSERTs every reading into the `readings` table; INSERTs into the `alerts` table only when
+  `prob >= threshold (0.5)`. Skips unchanged readings via `last_seen` guard.
+- ⚙️ **`theft-detector.service` (Dennis)** — systemd unit wrapping `detect.py`. Runs after `meter.service`.
+  Active and running on `nfetestpi2`. Configured with `User=nfetestpi2` and correct `DATA_DIR`.
+- 🖥️ **`monitor.py`** — Local Pi diagnostic Streamlit dashboard. Reads `latest_reading_1.json` every 5s.
+  Shows metric tiles (V/I/P per phase) and rolling 60-reading line charts (Current, Voltage, Power tabs).
+  Not deployed to cloud — used by field engineers for on-site commissioning and maintenance.
+- 📊 **Neon `readings` table** — Schema recreated with correct column names (`i_l1`, `i_l2`, etc.) after
+  original schema had wrong column names. Every 10-second reading now logged permanently.
+
+### ✅ Cloud (Hillary)
+- **`streamlit_app.py`** deployed to Streamlit Community Cloud.
+  URL: `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app`
+- KPI row (total alerts, 24h count, latest probability, last alert time)
+- Colour-coded alerts table (red ≥90%, yellow ≥70%)
+- Live readings tabs (Current / Voltage / Power) — 30s auto-refresh
+- Alert trend bar chart
+
+### 🐛 Known Issue
+- **I_L2 reads 0.000A permanently** — `I_L2_zero` feature fires on every reading, model classifies
+  every reading as theft (~94% probability). Likely wiring issue or no load on L2 phase.
+  Field investigation pending.
+
+### 📐 Architecture
+- `design-docs/architecture.dsl` updated to v4.0.0 — all "TO BUILD / PLANNED / NEEDS REWRITE" labels
+  removed. `localMonitor` component added for `monitor.py`.
+
+---
+
 ## 🚀 [3.0.0] - 2026-04-05
 
 ### 🤖 Theft Detection ML Pipeline — Data Collection Phase

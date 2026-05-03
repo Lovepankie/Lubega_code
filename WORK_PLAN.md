@@ -72,7 +72,8 @@ CREATE TABLE readings (
 
 ---
 
-### STEP 2 — Dennis: Add `latest_reading.json` hook to `main.py` *(~15 min)*
+### STEP 2 — Dennis: Add `latest_reading.json` hook to `main.py` *(~15 min)* ✅ DONE
+> **3-line JSON hook added to `src/main.py`. Overwrites `data/latest_reading_{meter_id}.json` every 10s.**
 
 **File:** `nfe-modbus-energy-logger/src/main.py`
 
@@ -92,7 +93,8 @@ Put the `import json, pathlib` at the top of main.py with the other imports, not
 
 ---
 
-### STEP 3 — Dennis: Write `feature_engineering.py` *(~2 hrs)*
+### STEP 3 — Dennis: Write `feature_engineering.py` *(~2 hrs)* ✅ DONE
+> **`src/feature_engineering.py` live. 20-feature pipeline using uppercase keys. `verify_features()` guard added.**
 
 **File:** `nfe-modbus-energy-logger/src/feature_engineering.py`
 
@@ -137,7 +139,8 @@ def engineer_features(reading: dict) -> dict:
 
 ---
 
-### STEP 4 — Dennis: Write `detect.py` *(~3 hrs)*
+### STEP 4 — Dennis: Write `detect.py` *(~3 hrs)* ✅ DONE
+> **`detect.py` live. INSERTs every reading into `readings` table + alert into `alerts` table if prob > 0.5. Uses `joblib.load` not pickle. Skips unchanged readings via `last_seen` guard.**
 
 **File:** `nfe-modbus-energy-logger/detect.py`
 
@@ -233,7 +236,8 @@ POLL_INTERVAL=10
 
 ---
 
-### STEP 5 — Dennis: Write `theft-detector.service` *(~30 min)*
+### STEP 5 — Dennis: Write `theft-detector.service` *(~30 min)* ✅ DONE
+> **Service deployed and active on nfetestpi2. User=nfetestpi2, WorkingDirectory=/home/nfetestpi2/nfe-modbus-energy-logger.**
 
 **File:** `nfe-modbus-energy-logger/systemd/theft-detector.service`
 
@@ -267,7 +271,8 @@ sudo journalctl -fu theft-detector    # watch logs live
 
 ---
 
-### STEP 6 — Dennis: End-to-end test on Pi *(~1 hr)*
+### STEP 6 — Dennis: End-to-end test on Pi *(~1 hr)* ✅ DONE
+> **System fully live. `readings` + `alerts` tables both populating in Neon. Dashboard showing 10+ alerts at ~94% probability. Known issue: I_L2=0.000A is causing every reading to fire as theft (false positive) — field investigation pending.**
 
 1. Confirm `meter.service` is running and writing `latest_reading_1.json`:
    ```bash
@@ -334,13 +339,12 @@ Dashboard is **LIVE** at: `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app`
 
 ---
 
-### STEP 9 — Both: Full end-to-end test *(~1 hr together)* ⏳ WAITING FOR DENNIS
+### STEP 9 — Both: Full end-to-end test *(~1 hr together)* ✅ DONE
 
-- Dashboard is ready and watching Neon — alert will appear the moment Dennis's detect.py fires
-- Dennis simulates a bypass (edit `latest_reading_1.json`, set `I_L1=0.0`)
-- Both watch `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app` — alert should appear within 30s
-- Confirm timestamp, probability score, and phase readings are correct
-- **Done — system is live**
+- Dashboard live at `lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app`
+- Pi inference running — alerts and readings flowing into Neon in real time
+- **System is fully live as of 2026-05-04**
+- Next: investigate I_L2=0.000A false positive (wiring or no load on L2?)
 
 ---
 
@@ -372,23 +376,24 @@ Lubega_code/  (repo: RincolTech-Solutions-ltd/Lubega_code, branch: main)
 ├── requirements.txt                      ← ✅ done (streamlit, pandas, psycopg2-binary, sqlalchemy)
 ├── Lubega_Project_Report.docx            ← fill in student names + reg numbers (updated 2026-05-03)
 ├── Lubega_Project_Presentation.pptx      ← fill in student names + reg numbers (updated 2026-05-03)
+├── monitor.py                            ← ✅ local Pi diagnostic dashboard (Streamlit, 5s refresh, 60-reading history)
 ├── nfe-modbus-energy-logger/
 │   ├── src/
 │   │   ├── meter_reader.py               ← ✅ done
 │   │   ├── aggregator.py                 ← ✅ done
-│   │   ├── main.py                       ← ✅ done (+3 lines Dennis adds in Step 2)
-│   │   └── feature_engineering.py        ← ❌ Dennis rewrites (Step 3) — current version uses wrong key casing
-│   ├── detect.py                         ← ❌ Dennis rewrites (Step 4) — current version reads CSV not JSON
+│   │   ├── main.py                       ← ✅ done (JSON hook at line 188-190)
+│   │   └── feature_engineering.py        ← ✅ done (20 features, uppercase keys, verify_features guard)
+│   ├── detect.py                         ← ✅ done (JSON polling, reads+alerts to Neon every 10s)
 │   ├── systemd/
-│   │   ├── meter.service                 ← ✅ done (running on Pi)
-│   │   └── theft-detector.service        ← ❌ Dennis writes (Step 5)
+│   │   ├── meter.service                 ← ✅ done (running on nfetestpi2)
+│   │   └── theft-detector.service        ← ✅ done (running on nfetestpi2)
 │   ├── model/
-│   │   ├── theft_detector.pkl            ← ✅ done (14.4 MB)
+│   │   ├── theft_detector.pkl            ← ✅ done (14.4 MB, VotingClassifier RF+XGB)
 │   │   ├── scaler.pkl                    ← ✅ done
 │   │   └── features.pkl                  ← ✅ done
 │   └── design-docs/
-│       ├── architecture.dsl              ← ✅ updated 2026-05-03
-│       └── adr/                          ← ✅ done (ADR-001 to ADR-004)
+│       ├── architecture.dsl              ← ✅ updated 2026-05-04 (v4.0.0, all components live)
+│       └── adr/                          ← ✅ done (ADR-001 to ADR-004; ADR-005 pending for monitor.py)
 └── app/
     └── app.py                            ← ✅ same content as streamlit_app.py (Hillary's reference copy)
 ```

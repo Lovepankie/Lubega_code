@@ -1,12 +1,15 @@
 /*
  * Structurizr DSL — Lubega Power Theft Detection System
  * Repo: https://github.com/RincolTech-Solutions-ltd/Lubega_code
- * Version: v3.1.0 (dashboard LIVE — 2026-05-03)
+ * Version: v4.0.0 (system FULLY LIVE — 2026-05-04)
  *
- * Milestone: Streamlit dashboard deployed to Streamlit Community Cloud.
- *   URL: lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app
- *   Alert bridge: Neon PostgreSQL (lubega-production project)
- *   Pending: Dennis — detect.py + theft-detector.service + Pi deployment
+ * Milestone: End-to-end system operational.
+ *   Pi: meter.service + theft-detector.service both running on nfetestpi2.
+ *   Inference: detect.py (JSON polling, 10s cadence) active. VotingClassifier live.
+ *   Cloud: Neon readings + alerts tables populated in real time.
+ *   Dashboard: lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app live. Alerts visible.
+ *   Local monitor: monitor.py (Streamlit) runs on Pi for on-site diagnostics.
+ *   Known issue: I_L2 reads 0.000A permanently — false positive investigation pending.
  *
  * C4 Levels: Context → Container → Component
  * Render: https://structurizr.com/dsl  |  structurizr-cli export -f plantuml
@@ -55,14 +58,16 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
 
                 stateManager = component "state_manager.py" "Persists energy accumulation state to JSON (data/state/meter_NNN_state.json). Survives process restarts and power cuts. Restores integration continuity on startup." "Python"
 
-                latestReading = component "data/latest_reading_{meter_id}.json" "Overwritten every 10 seconds by main.py with the freshest raw poll reading (uppercase keys: I_L1, V_L1, etc.). detect.py reads this file to get the same data distribution the model was trained on — avoids the 15-min averaging problem." "JSON file — TO ADD (Step 2)"
+                latestReading = component "data/latest_reading_{meter_id}.json" "Overwritten every 10 seconds by main.py with the freshest raw poll reading (uppercase keys: I_L1, V_L1, etc.). detect.py reads this file to get the same data distribution the model was trained on — avoids the 15-min averaging problem." "JSON file"
 
-                # ── Inference subsystem (TO BUILD) ────────────────────────────
-                detectorService = component "theft-detector.service (TO BUILD)" "Systemd unit wrapping detect.py. Runs after meter.service stabilises. Restarts on failure. Reads detect.py every POLL_INTERVAL seconds." "systemd — PLANNED"
+                localMonitor = component "monitor.py" "Local Streamlit diagnostic dashboard. Runs on the Pi for on-site inspection. Reads latest_reading_{meter_id}.json every 5s. Shows metric tiles (V/I/P per phase) and rolling 60-reading line charts (Current, Voltage, Power tabs). Not deployed to cloud — used by field engineers during commissioning and maintenance." "Python / Streamlit"
 
-                detectScript = component "detect.py (TO BUILD)" "Main inference loop. Every 10s: reads latest_reading_{meter_id}.json, engineers 20 features, scales with scaler.pkl, runs theft_detector.pkl. If prob > threshold (0.5), INSERTs alert into Neon PostgreSQL via psycopg2. Skips if reading unchanged since last cycle." "Python — PLANNED"
+                # ── Inference subsystem (LIVE) ────────────────────────────────
+                detectorService = component "theft-detector.service" "Systemd unit wrapping detect.py. Runs after meter.service stabilises. Restarts on failure. Polls detect.py every POLL_INTERVAL seconds (10s)." "systemd"
 
-                featureEngineer = component "feature_engineering.py (TO REWRITE)" "20-feature engineering pipeline. Takes one raw reading dict (uppercase keys from meter_reader.py) and returns 20 features: I_L1/L2/L3, V_L1/L2/L3, P_total, PF_total, frequency + I_imbalance, V_imbalance, I_L1/L2/L3_zero (flags), V_L1/L2/L3_zero (flags), PF_zero, I_total, P_per_I. Current file uses lowercase keys — must be rewritten to match training data." "Python — NEEDS REWRITE"
+                detectScript = component "detect.py" "Main inference loop. Every 10s: reads latest_reading_{meter_id}.json, engineers 20 features, scales with scaler.pkl, runs theft_detector.pkl. INSERTs every reading into the readings table. If prob > threshold (0.5), also INSERTs into the alerts table. Skips if reading unchanged since last cycle." "Python"
+
+                featureEngineer = component "feature_engineering.py" "20-feature engineering pipeline. Takes one raw reading dict (uppercase keys from meter_reader.py) and returns 20 features: I_L1/L2/L3, V_L1/L2/L3, P_total, PF_total, frequency + I_imbalance, V_imbalance, I_L1/L2/L3_zero (flags), V_L1/L2/L3_zero (flags), PF_zero, I_total, P_per_I." "Python"
 
                 # ── ML Model artefacts ────────────────────────────────────────
                 theftDetectorModel = component "theft_detector.pkl" "Trained VotingClassifier (soft voting): RandomForestClassifier (200 trees, max_depth=15, balanced class weights) + XGBClassifier (200 rounds, max_depth=6, scaled_pos_weight). Test AUC=1.0000. 14.4 MB on disk." "Joblib / scikit-learn"
@@ -129,14 +134,15 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         csvLogger -> csvStore "Writes rows to"
         csvLogger -> stateManager "Reads/writes energy state via"
 
-        # ── Relationships — Component (Pi inference, PLANNED) ───────────────────
+        # ── Relationships — Component (Pi inference, LIVE) ─────────────────────
         detectorService -> detectScript "Runs every POLL_INTERVAL seconds"
         detectScript -> latestReading "Reads latest raw reading from"
         detectScript -> featureEngineer "Passes raw reading dict to"
         featureEngineer -> featuresFile "Uses feature order from"
         detectScript -> scalerModel "Scales feature vector with"
         detectScript -> theftDetectorModel "Runs predict_proba() on"
-        detectScript -> neon "INSERTs alert record if prob > threshold" "psycopg2 TCP"
+        detectScript -> neon "INSERTs every reading; INSERTs alert if prob > threshold" "psycopg2 TCP"
+        localMonitor -> latestReading "Reads latest raw reading every 5s"
 
         # ── Relationships — Component (dev machine) ─────────────────────────────
         trainScript -> theftDetectorModel "Produces"
@@ -173,7 +179,7 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
             include *
             autoLayout tb
             title "Raspberry Pi — All Components"
-            description "Metering subsystem (built) + inference subsystem (planned). Items marked TO BUILD/REWRITE are the remaining critical path to live detection."
+            description "Metering subsystem (LIVE) + inference subsystem (LIVE) + local monitor. Full end-to-end pipeline active on nfetestpi2."
         }
 
         # ── Component — metering only ─────────────────────────────────────────────
@@ -188,8 +194,8 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
         component piApp "Components_Inference" {
             include detectorService detectScript featureEngineer scalerModel theftDetectorModel featuresFile latestReading neon
             autoLayout tb
-            title "Inference Subsystem (TO BUILD — Critical Path)"
-            description "The missing inference pipeline. detect.py + theft-detector.service + Neon push = live detection. Dennis owns this."
+            title "Inference Subsystem (LIVE)"
+            description "The live inference pipeline. detect.py polls every 10s, engineers 20 features, runs VotingClassifier, INSERTs every reading to Neon. Alerts inserted when prob > 0.5. Known issue: I_L2=0.000A causing false positives — field investigation pending."
         }
 
         # ── Component — dashboard ─────────────────────────────────────────────────
@@ -197,7 +203,7 @@ workspace "Lubega Power Theft Detection" "AI-powered real-time electricity theft
             include dashboardMain neonConn neon utility
             autoLayout lr
             title "Streamlit Dashboard (LIVE — lubegacode-tbn4wlkpdrzqhjahqssdvf.streamlit.app)"
-            description "The operator-facing alert and monitoring dashboard. Live. Waiting for Pi inference to start producing alerts."
+            description "The operator-facing alert and monitoring dashboard. Live. Showing real alerts and readings from the Pi inference pipeline."
         }
 
         # ── Component — training pipeline ─────────────────────────────────────────

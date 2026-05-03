@@ -60,12 +60,26 @@ while True:
                      pred, prob,
                      reading.get('I_L1', 0), reading.get('I_L2', 0), reading.get('I_L3', 0))
 
-        if pred == 1:
-            logging.warning("THEFT DETECTED — meter=%s  prob=%.4f", METER_NAME, prob)
-            if NEON_URL:
-                try:
-                    conn = psycopg2.connect(NEON_URL)
-                    cur  = conn.cursor()
+        if NEON_URL:
+            try:
+                conn = psycopg2.connect(NEON_URL)
+                cur  = conn.cursor()
+
+                # Always log every reading to the readings table
+                cur.execute(
+                    """INSERT INTO readings
+                       (logged_at, meter_id, meter_name,
+                        v_l1, v_l2, v_l3, i_l1, i_l2, i_l3,
+                        p_total, pf_total, frequency)
+                       VALUES (now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (METER_ID, METER_NAME,
+                     reading.get('V_L1'), reading.get('V_L2'), reading.get('V_L3'),
+                     reading.get('I_L1'), reading.get('I_L2'), reading.get('I_L3'),
+                     reading.get('P_total'), reading.get('PF_total'), reading.get('frequency'))
+                )
+
+                if pred == 1:
+                    logging.warning("THEFT DETECTED — meter=%s  prob=%.4f", METER_NAME, prob)
                     cur.execute(
                         """INSERT INTO alerts
                            (meter_id, meter_name, prediction, probability,
@@ -77,11 +91,12 @@ while True:
                          reading.get('V_L1'), reading.get('V_L2'), reading.get('V_L3'),
                          reading.get('P_total'), reading.get('PF_total'), reading.get('frequency'))
                     )
-                    conn.commit()
-                    conn.close()
                     logging.warning("THEFT ALERT inserted into Neon.")
-                except Exception as e:
-                    logging.error("Neon insert failed: %s", e)
+
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logging.error("Neon insert failed: %s", e)
 
     except FileNotFoundError:
         logging.warning("Waiting for %s/latest_reading_%d.json — is meter.service running?",

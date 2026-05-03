@@ -73,9 +73,9 @@ while True:
                         p_total, pf_total, frequency)
                        VALUES (now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (METER_ID, METER_NAME,
-                     reading.get('V_L1'), reading.get('V_L2'), reading.get('V_L3'),
-                     reading.get('I_L1'), reading.get('I_L2'), reading.get('I_L3'),
-                     reading.get('P_total'), reading.get('PF_total'), reading.get('frequency'))
+                     float(reading.get('V_L1', 0)), float(reading.get('V_L2', 0)), float(reading.get('V_L3', 0)),
+                     float(reading.get('I_L1', 0)), float(reading.get('I_L2', 0)), float(reading.get('I_L3', 0)),
+                     float(reading.get('P_total', 0)), float(reading.get('PF_total', 0)), float(reading.get('frequency', 0)))
                 )
 
                 if pred == 1:
@@ -86,10 +86,10 @@ while True:
                             i_l1, i_l2, i_l3, v_l1, v_l2, v_l3,
                             p_total, pf_total, frequency)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                        (METER_ID, METER_NAME, pred, prob,
-                         reading.get('I_L1'), reading.get('I_L2'), reading.get('I_L3'),
-                         reading.get('V_L1'), reading.get('V_L2'), reading.get('V_L3'),
-                         reading.get('P_total'), reading.get('PF_total'), reading.get('frequency'))
+                        (METER_ID, METER_NAME, int(pred), float(prob),
+                         float(reading.get('I_L1', 0)), float(reading.get('I_L2', 0)), float(reading.get('I_L3', 0)),
+                         float(reading.get('V_L1', 0)), float(reading.get('V_L2', 0)), float(reading.get('V_L3', 0)),
+                         float(reading.get('P_total', 0)), float(reading.get('PF_total', 0)), float(reading.get('frequency', 0)))
                     )
                     logging.warning("THEFT ALERT inserted into Neon.")
 

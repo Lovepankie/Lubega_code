@@ -16,8 +16,32 @@ st.title("⚡ Lubega — Real-Time Electricity Theft Detection")
 st.caption("UEDCL Distribution Monitoring · Powered by Raspberry Pi + ML")
 st.divider()
 
+# ── Safe query helper ─────────────────────────────────────────────────────────
+def safe_query(sql, ttl=30):
+    try:
+        return conn.query(sql, ttl=ttl), None
+    except Exception:
+        return None, True
+
+# ── Fetch data ────────────────────────────────────────────────────────────────
+alerts_all, db_error_alerts   = safe_query("SELECT * FROM alerts ORDER BY detected_at DESC", ttl=30)
+readings,   db_error_readings = safe_query("SELECT * FROM readings ORDER BY logged_at DESC LIMIT 96", ttl=30)
+
+pi_offline = db_error_alerts or db_error_readings
+
+# ── Pi offline banner ─────────────────────────────────────────────────────────
+if pi_offline:
+    st.warning(
+        "🔌 **Raspberry Pi is offline or not transmitting data.**  \n"
+        "The edge device may be powered off, disconnected from the network, "
+        "or the detection service has stopped.  \n"
+        "Data will resume automatically once the Pi reconnects.",
+        icon="⚠️",
+    )
+    st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refreshes every 30s")
+    st.stop()
+
 # ── KPI row ──────────────────────────────────────────────────────────────────
-alerts_all = conn.query("SELECT * FROM alerts ORDER BY detected_at DESC", ttl=30)
 alerts_24h = alerts_all[
     pd.to_datetime(alerts_all["detected_at"], utc=True)
     >= pd.Timestamp.now(tz="UTC") - timedelta(hours=24)
@@ -53,7 +77,6 @@ with col_left:
         display.columns = ["Timestamp", "Meter", "Confidence", "I_L1 (A)", "I_L2 (A)", "I_L3 (A)", "P Total (kW)"]
         display["Confidence"] = display["Confidence"].map(lambda x: f"{x:.1%}")
 
-        # Colour-code rows by confidence
         def row_colour(row):
             prob = float(row["Confidence"].strip("%")) / 100
             if prob >= 0.9:
@@ -71,11 +94,7 @@ with col_left:
 with col_right:
     st.subheader("📊 Live Readings")
 
-    readings = conn.query(
-        "SELECT * FROM readings ORDER BY logged_at DESC LIMIT 96", ttl=30
-    )
-
-    if readings.empty:
+    if readings is None or readings.empty:
         st.info("No readings yet. Waiting for Pi to push data.")
     else:
         readings["logged_at"] = pd.to_datetime(readings["logged_at"])
